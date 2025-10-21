@@ -1,63 +1,206 @@
-sdhash
-======
-sdhash is tool that allows two arbitrary blobs of data to be compared for 
-similarity based on common strings of binary data. It is designed to provide 
-quick results during triage and initial investigation phases. It has been in 
-active development since 2010 with the explicit goal of becoming fast, scalable, 
-and reliable.
+# sdhash for Ubuntu 24.04 (protobuf 3.21 ready)
+**日本語 / English**
 
-There two general classes of problems where sdhash can provide significant 
-benefits–fragment identification and version correlation.
+---
 
-In fragment identification, we search for a smaller piece of data inside a 
-bigger piece of data (“needle-in-a-haystack”). For example:
+## 🧩 概要（Japanese）
+このリポジトリは、**Ubuntu 24.04 LTS**（gcc 13 / protobuf 3.21.x）環境で `sdhash` をビルド可能にするための修正版です。  
+オリジナルの `sdhash` は古い protobuf (2.x〜3.6) 用に生成されたコードを含んでおり、  
+そのままではコンパイルエラー（`kEmptyString` など）が発生するため、  
+**`blooms.proto` から現行の `protoc` (3.21.x) で再生成した `blooms.pb.h` / `blooms.pb.cc`** を含めています。
 
-Block vs. file correlation: given a chunk of data (disk block/network packet
-/RAM page/etc), we can search a reference collection of files to identify 
-whether the chunk came from any of them.
+- 元プロジェクト: https://github.com/sdhash/sdhash  
+- ライセンス: Apache License 2.0（本リポジトリも継承）
 
-File vs. RAM/disk image: given a file and a target image, we can efficiently 
-determine if any pieces of the file can be found on the image (that includes 
-deallocated storage).
+---
 
-In version correlation, we are interested in correlating data objects (files) 
-that are comparable in size and, thus, similar ones can be viewed as versions. 
-These are two basic scenarios in which this is useful–identifying related 
-documents and identifying code versions.
+## 🧾 Overview (English)
+This repository provides a **buildable fork of sdhash for Ubuntu 24.04 LTS** (gcc 13 / protobuf 3.21.x).  
+Older protobuf-generated files in the original repository caused build failures on modern systems.  
+Here, we **regenerated `sdbf/blooms.pb.h` and `sdbf/blooms.pb.cc`** from `blooms.proto` using `protoc 3.21.x`.
 
-In all cases, the use of the tool is the same, however the interpretation may 
-differ based on the circumstances.
+- Upstream: https://github.com/sdhash/sdhash  
+- License: Apache License 2.0 (inherited)
 
-Current version info: 
-<pre>
-sdhash 4.0 by Vassil Roussev, Candice Quates [sdhash.org] 12/2013
+---
 
-Usage: sdhash <options> <files>
-Configuration:
-  -r [ --deep ]                   generate SDBFs from directories and files
-  -f [ --target-list ]            generate SDBFs from list(s) of filenames
-  -c [ --compare ]                compare SDBFs in file, or two SDBF files
-  -g [ --gen-compare ]            compare all pairs in source data
-  -t [ --threshold ] arg (=1)     only show results >=threshold
-  -b [ --block-size ] arg         hashes input files in nKB blocks
-  -p [ --threads ] arg            restrict compute threads to N threads
-  -s [ --sample-size ] arg (=0)   sample N filters for comparisons
-  -z [ --segment-size ] arg       set file segment size, 128MB default
-  -o [ --output ] arg             send output to files
-  --separator arg (=pipe)         for comparison results: pipe csv tab
-  --hash-name arg                 set name of hash on stdin
-  --fast                          shrink sdbf filters for speedup
-  --large                         create larger (1M content) filters
-  --validate                      parse SDBF file to check if it is valid
-  --details                       parse SDBF-LG file for contents
-  --index                         generate indexes while hashing
-  --index-search arg              search directory of reference indexes
-  --config-file arg (=sdhash.cfg) use config file
-  --verbose                       warnings, debug and progress output
-  --version                       show version info
-  -h [ --help ]                   produce help message
+## 🧱 動作確認環境 / Tested Environment
+| 項目 | バージョン |
+|------|-------------|
+| OS | Ubuntu 24.04 LTS |
+| Compiler | gcc / g++ 13.x |
+| Protobuf | protoc 3.21.x |
+| OpenMP | libgomp (標準で付属) |
 
-</pre>
-Tutorial: http://roussev.net/sdhash/tutorial/sdhash-tutorial.html
+```bash
+protoc --version   # libprotoc 3.21.x
+g++ --version      # gcc (Ubuntu 13.x)
+```
 
-Papers/Version history/etc:  http://sdhash.org/
+---
+
+## ⚙️ 依存パッケージ / Dependencies
+```bash
+sudo apt update
+sudo apt install -y   build-essential protobuf-compiler libprotobuf-dev   libssl-dev zlib1g-dev libmagic-dev
+```
+
+> Boost はリポジトリ同梱の `external/` 以下で自動ビルドされます。  
+> 実行時に共有ライブラリが必要な場合は「ランタイム設定」を参照してください。
+
+---
+
+## 🛠️ ビルド手順 / Build Instructions
+
+通常は以下の手順でビルドできます。
+
+```bash
+# 1) Clone
+git clone https://github.com/bekuta-jp/sdhash_for_ubuntu24.04.git
+cd sdhash_for_ubuntu24.04
+
+# 2) Build
+make -j"$(nproc)" || true
+make -C sdhash-src -j"$(nproc)" || true
+```
+
+もし `sdhash` バイナリが生成されない場合は、下記の **手動リンク（フォールバック）** を実行してください。
+
+---
+
+## 🧩 フォールバック：手動リンク / Fallback: Manual Link
+すでに `.o` と `libsdbf.a` は作られているので、リンクだけ明示的に行います。  
+OpenMP 対応のために `-fopenmp` を忘れずに。
+
+```bash
+g++ -O3 -std=c++17 -fopenmp -o sdhash   sdhash-src/sdhash.o   sdhash-src/sdhash_threads.o   sdbf/blooms.pb.o   libsdbf.a   -Lexternal/stage/lib   -lboost_program_options -lboost_system -lboost_filesystem -lboost_thread   -lprotobuf -lssl -lcrypto -lz -lmagic -ldl -pthread
+```
+
+> If you see `omp_*` or `GOMP_*` undefined references, ensure `-fopenmp` is present.  
+> If Boost shared libraries are missing, see **Runtime settings** below.
+
+---
+
+## 🧩 インストール & 動作確認 / Install & Verify
+```bash
+sudo install -m 755 ./sdhash /usr/local/bin/sdhash
+
+which sdhash
+sdhash -v
+sdhash -f /etc/hosts | head -n 1   # → "sdbf:sha1:..." が出ればOK
+```
+
+---
+
+## 🧠 ランタイム設定（必要に応じて） / Runtime Settings (if needed)
+
+**一時的に LD_LIBRARY_PATH を追加:**
+```bash
+export LD_LIBRARY_PATH="$PWD/external/stage/lib:$LD_LIBRARY_PATH"
+```
+
+**永続的に登録:**
+```bash
+echo "$PWD/external/stage/lib" | sudo tee /etc/ld.so.conf.d/sdhash-boost.conf
+sudo ldconfig
+```
+
+---
+
+## 🔁 protobuf 再生成手順（任意） / (Optional) Regenerate protobuf
+
+このリポジトリには **すでに再生成済みのファイル** が含まれていますが、  
+別環境で再生成したい場合は以下のコマンドを実行します。
+
+```bash
+# 旧ファイルを退避（任意）
+mkdir -p sdbf/_bak && mv sdbf/blooms.pb.* sdbf/_bak/ 2>/dev/null || true
+
+# 再生成
+protoc -I . --cpp_out=sdbf blooms.proto
+```
+
+> 警告を消したい場合は `blooms.proto` の先頭に  
+> `syntax = "proto2";` を追加してください。
+
+---
+
+## 🔧 変更点 / What’s Changed
+| 項目 | 内容 |
+|------|------|
+| protobuf 対応 | `blooms.pb.*` を Ubuntu 24.04 + protobuf 3.21 用に再生成 |
+| ビルド改善 | `-fopenmp` を使用して OpenMP に対応 |
+| ドキュメント | 新しいビルド手順を追加（英日併記） |
+| 機能変更 | なし（ビルド互換性修正のみ） |
+
+---
+
+## 🪪 ライセンス / License
+- 本リポジトリは **Apache License 2.0** に基づき公開されています。  
+- オリジナルの `LICENSE` および `NOTICE` を保持しています。  
+- This repository inherits **Apache License 2.0** from the original sdhash.  
+
+---
+
+## 🙏 謝辞 / Acknowledgements
+- Original sdhash authors and contributors.  
+- All developers maintaining protobuf and build environments for modern Linux distributions.
+
+---
+
+## ❓ FAQ
+
+### Q1. Ubuntu 22.04 / 20.04 でも使えますか？
+→ 多くの環境で動作しますが、protobuf バージョンが異なる場合は  
+　`blooms.pb.*` の再生成を行ってください。
+
+### Q2. Boost が見つからないと言われます。
+→ 実行時に `LD_LIBRARY_PATH` または `ldconfig` で  
+　`external/stage/lib` を参照できるようにしてください。
+
+### Q3. OpenMP 関連のエラーが出ます。
+→ `-fopenmp` オプションをリンク時に追加してください。必要に応じて `-lgomp` も追加。
+
+---
+
+## 🧰 簡易ビルドスクリプト（任意） / Optional Build Script
+リポジトリ内に `build.sh` を置けばワンコマンドでセットアップできます。
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+sudo apt update
+sudo apt install -y build-essential protobuf-compiler libprotobuf-dev                     libssl-dev zlib1g-dev libmagic-dev
+
+make -j"$(nproc)" || true
+make -C sdhash-src -j"$(nproc)" || true
+
+if [[ ! -x ./sdhash && ! -x sdhash-src/sdhash ]]; then
+  g++ -O3 -std=c++17 -fopenmp -o sdhash     sdhash-src/sdhash.o sdhash-src/sdhash_threads.o sdbf/blooms.pb.o libsdbf.a     -Lexternal/stage/lib     -lboost_program_options -lboost_system -lboost_filesystem -lboost_thread     -lprotobuf -lssl -lcrypto -lz -lmagic -ldl -pthread
+fi
+
+sudo install -m 755 ./sdhash /usr/local/bin/sdhash
+sdhash -v
+```
+
+---
+
+## 📦 再現性とバージョン情報 / Reproducibility
+| 項目 | 値 |
+|------|----|
+| Ubuntu | 24.04 LTS |
+| gcc/g++ | 13.2.0 |
+| protobuf | 3.21.12 |
+| sdhash | v3.6 (rebuild) |
+| 最終更新 | 2025-10 |
+
+---
+
+## 🌐 リンク / Links
+- Original: [sdhash/sdhash](https://github.com/sdhash/sdhash)
+- Forked / Updated: [bekuta-jp/sdhash_for_ubuntu24.04](https://github.com/bekuta-jp/sdhash_for_ubuntu24.04)
+
+---
+
+> © 2025 bekuta-jp / Apache License 2.0  
+> 本リポジトリは研究および再現実験目的で公開されています。
