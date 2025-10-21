@@ -1,0 +1,21 @@
+name: build-ubuntu-2404
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt update
+      - run: sudo apt install -y build-essential protobuf-compiler libprotobuf-dev \
+                                libssl-dev zlib1g-dev libmagic-dev
+      - run: make -j"$(nproc)" || true
+      - run: make -C sdhash-src -j"$(nproc)" || true
+      - run: |
+          if [[ ! -f sdhash && ! -f sdhash-src/sdhash ]]; then
+            g++ -O3 -std=c++17 -fopenmp -o sdhash \
+              sdhash-src/sdhash.o sdhash-src/sdhash_threads.o sdbf/blooms.pb.o libsdbf.a \
+              -Lexternal/stage/lib \
+              -lboost_program_options -lboost_system -lboost_filesystem -lboost_thread \
+              -lprotobuf -lssl -lcrypto -lz -lmagic -ldl -pthread
+          fi
+      - run: ./sdhash -v || sdhash-src/sdhash -v
