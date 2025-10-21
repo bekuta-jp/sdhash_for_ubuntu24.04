@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+*.a
+*.so*
+sdhash
+sdhash-src/sdhash
+sdbf/_bak/
+external/stage/
+build/
+dist/
+__pycache__/
+
+# Editor / system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
