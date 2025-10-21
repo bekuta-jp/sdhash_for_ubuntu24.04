@@ -1,21 +1,56 @@
 name: build-ubuntu-2404
 on: [push, pull_request]
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt update
-      - run: sudo apt install -y build-essential protobuf-compiler libprotobuf-dev \
-                                libssl-dev zlib1g-dev libmagic-dev
-      - run: make -j"$(nproc)" || true
-      - run: make -C sdhash-src -j"$(nproc)" || true
-      - run: |
+
+      # 依存インストール（非対話・安定化）
+      - name: Install deps
+        run: |
+          set -euxo pipefail
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential protobuf-compiler libprotobuf-dev \
+            libssl-dev zlib1g-dev libmagic-dev \
+            pkg-config
+
+      # 念のため .proto から再生成（既に同梱でも安全）
+      - name: Regenerate protobuf
+        run: |
+          protoc -I . --cpp_out=sdbf blooms.proto
+
+      # make ビルド（どちらか通ればOK）
+      - name: Build (make)
+        run: |
+          set -eux
+          make -j"$(nproc)" || true
+          make -C sdhash-src -j"$(nproc)" || true
+
+      # バイナリが無ければ手動リンク（OpenMP込み）
+      - name: Link fallback
+        run: |
+          set -eux
           if [[ ! -f sdhash && ! -f sdhash-src/sdhash ]]; then
             g++ -O3 -std=c++17 -fopenmp -o sdhash \
-              sdhash-src/sdhash.o sdhash-src/sdhash_threads.o sdbf/blooms.pb.o libsdbf.a \
+              sdhash-src/sdhash.o \
+              sdhash-src/sdhash_threads.o \
+              sdbf/blooms.pb.o \
+              libsdbf.a \
               -Lexternal/stage/lib \
               -lboost_program_options -lboost_system -lboost_filesystem -lboost_thread \
               -lprotobuf -lssl -lcrypto -lz -lmagic -ldl -pthread
           fi
-      - run: ./sdhash -v || sdhash-src/sdhash -v
+
+      # 動作確認
+      - name: Verify
+        run: |
+          set -eux
+          if [[ -f ./sdhash ]]; then
+            ./sdhash -v
+          else
+            sdhash-src/sdhash -v
+          fi
+
